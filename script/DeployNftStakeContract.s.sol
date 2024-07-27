@@ -4,19 +4,30 @@ pragma solidity ^0.8.20;
 import {Script} from "forge-std/Script.sol";
 import {NftStakeContractV1} from "../src/NftStakeContractV1.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol"; 
-
+import {StakeToken} from "../src/StakeToken.sol";
+import {NftVault} from "../src/NftVault.sol";
 
 contract DeployNftStakeContract is Script {
 
-    function run() external returns(address proxy){
-        proxy = deployNftStakeContract();  
+
+    function run() external returns(address){
+        (address proxy, address nftStakeContractV1) = deployNftStakeContract();  
+        vm.startBroadcast();
+        StakeToken stakeToken = new StakeToken();
+        NftVault nftVault = new NftVault(); 
+        stakeToken.transferOwnership(nftStakeContractV1);         
+        nftVault.transferOwnership(nftStakeContractV1); 
+        vm.stopBroadcast();
+        return proxy; 
     }
 
-    function deployNftStakeContract() public returns(address){
+    function deployNftStakeContract() public returns(address, address){
         vm.startBroadcast(); 
-        NftStakeContractV1 nftStakeContractV1 = new NftStakeContractV1(); 
+        NftStakeContractV1 nftStakeContractV1 = new NftStakeContractV1();
         ERC1967Proxy proxy = new ERC1967Proxy(address(nftStakeContractV1), ""); 
+        NftStakeContractV1(address(proxy)).initialize(); 
         vm.stopBroadcast();
-        return address(proxy); 
+        return (address(proxy), address(nftStakeContractV1)); 
     }
+
 }
