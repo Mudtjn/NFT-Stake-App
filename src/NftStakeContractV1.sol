@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import {StakeToken} from "./StakeToken.sol";
 import {NftVault} from "./NftVault.sol"; 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {Pausable, Context} from "@openzeppelin/contracts/utils/Pausable.sol"; 
+import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol"; 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -13,7 +15,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
  * @author Mudit Jain
  * @notice Nft Staking contract where users can stake their NFTs for rewards
  */
-contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
+contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeable, Pausable {
 
     error NftStakeContractV1__InvalidTokenId(); 
     error NftStakeContractV1__ZeroAddress(); 
@@ -39,8 +41,8 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
 
     uint256 private s_rewards_per_block; 
     uint256 private s_tokenId; 
-    uint256 private s_unbonding_period; 
     uint256 private s_min_delay_between_rewards; 
+    uint256 private s_unbonding_period; 
     StakeToken private stakeToken; 
     NftVault private nftvault; 
     mapping(uint256 tokenId => Nft depositedNft) private s_tokenId_to_nft;  
@@ -83,7 +85,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     function stakeNft(
         address nftAddress, 
         uint256 nftId
-    ) external returns(uint256) {
+    ) external whenNotPaused returns(uint256) {
         // checks 
 
         // effects
@@ -98,7 +100,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         return tokenId; 
     }
 
-    function unStakeNft(uint256 tokenId) isValidTokenId(tokenId) external {
+    function unStakeNft(uint256 tokenId) isValidTokenId(tokenId) external whenNotPaused {
         // checks
         Nft memory nft = s_tokenId_to_nft[tokenId];
         isCallerOwnerOfNft(nft, msg.sender); 
@@ -114,7 +116,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         s_tokenId_to_unstakeTime[tokenId] = block.timestamp;  
     }
 
-    function claimRewards(uint256 tokenId) isValidTokenId(tokenId) external {
+    function claimRewards(uint256 tokenId) isValidTokenId(tokenId) whenNotPaused external {
         // checks
         Nft storage nft = s_tokenId_to_nft[tokenId]; 
         isCallerOwnerOfNft(nft, msg.sender); 
@@ -145,16 +147,21 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     function initialize() public initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
+        s_tokenId = 0;
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override{}
+    function _authorizeUpgrade(address newImplementation) internal whenPaused override{}
 
-    function getLatestTokenID() public view returns(uint256){
+    function getLatestTokenId() public view returns(uint256){
         return s_tokenId; 
     }
 
     function getNftFromTokenId(uint256 tokenId) isValidTokenId(tokenId) public view returns(Nft memory){
         return s_tokenId_to_nft[tokenId]; 
+    }
+
+    function getNftStatusFromTokenId(uint256 tokenId) isValidTokenId(tokenId) public view returns(NftStatus){
+        return s_tokenId_to_status[tokenId]; 
     }
 
     function isCallerOwnerOfNft(Nft memory nft, address user) internal pure {
@@ -172,4 +179,25 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
             nft.lastRewardTimeStamp = block.timestamp + s_unbonding_period; 
         }   
     }
+
+    function pauseContract() public onlyOwner {
+        _pause(); 
+    }
+
+    function unpauseContract() public onlyOwner {
+        _unpause(); 
+    }
+
+    function _msgSender() internal view override(Context, ContextUpgradeable) returns (address) {
+        return msg.sender;
+    }
+
+    function _msgData() internal view override(Context, ContextUpgradeable) returns (bytes calldata) {
+        return msg.data;
+    }
+
+    function _contextSuffixLength() internal view override(Context, ContextUpgradeable) returns (uint256) {
+        return 0;
+    }
+
 }
