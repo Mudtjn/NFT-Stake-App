@@ -15,74 +15,53 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
  * @author Mudit Jain
  * @notice Nft Staking contract where users can stake their NFTs for rewards
  */
-contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeable, Pausable {
-    error NftStakeContractV1__InvalidTokenId();
-    error NftStakeContractV1__ZeroAddress();
-    error NftStakeContractV1__NftStillStaked(uint256 tokenId);
-    error NftStakeContractV1__NftAlreadyUnstaked(uint256 tokenId);
-    error NftStakeContractV1__NftAlreadyWithdrawn(uint256 tokenId);
-    error NftStakeContractV1__CallerNotNftOwner();
-    error NftStakeContractV1__DelayPeriodNotOver();
-    error NftStakeContractV1__RewardAlreadyClaimed();
-    error NftStakeContractV1__RewardsPerBlockTooLow();
-    error NftStakeContractV1__UnbondingPeriodTooLow();
-    error NftStakeContractV1__MinDelayBetweenRewardsTooLow();
-    error NftStakeContractV1__UnbondingPeriodNotOver();
-    error NftStakeContractV1__DelayPeriodBetweenStakeAndUnstakeNotOver();
-    error NftStakeContractV1__MinDelayStakeAndUnstakeTooLow();
+contract NftStakeContractV2 is Initializable, UUPSUpgradeable, OwnableUpgradeable, Pausable {
+    error NftStakeContractV2__InvalidTokenId();
+    error NftStakeContractV2__ZeroAddress();
+    error NftStakeContractV2__NftStillStaked(uint256 tokenId);
+    error NftStakeContractV2__NftAlreadyUnstaked(uint256 tokenId);
+    error NftStakeContractV2__NftAlreadyWithdrawn(uint256 tokenId);
+    error NftStakeContractV2__CallerNotNftOwner();
+    error NftStakeContractV2__DelayPeriodNotOver();
+    error NftStakeContractV2__RewardAlreadyClaimed();
+    error NftStakeContractV2__RewardsPerBlockTooLow();
+    error NftStakeContractV2__UnbondingPeriodTooLow();
+    error NftStakeContractV2__MinDelayBetweenRewardsTooLow();
+    error NftStakeContractV2__UnbondingPeriodNotOver();
+    error NftStakeContractV2__DelayPeriodBetweenStakeAndUnstakeNotOver();
+    error NftStakeContractV2__MinDelayStakeAndUnstakeTooLow();
 
-    /// @notice This struct store configuration of nfts that have been staked on the platform
     struct Nft {
-        /// @notice ERC721 contract address
         address nftAddress;
-        /// @notice token-id of nft
         uint256 nftId;
-        /// @notice the user who staked the nft
         address previousOwner;
-        /// @notice last timestamp when user claimed rewards
         uint256 lastRewardTimeStamp;
     }
 
-    /// @notice This struct stores the configuration for the contract
     struct StakeConfiguration {
-        /// @notice rewardPerBlock given to the the staker
         uint256 rewardsPerBlock;
-        /// @notice globalTokenId for nfts sent to the user
         uint256 tokenId;
-        /// @notice minimum delay after which user can redeem rewards
         uint256 minDelayBetweenRewards;
-        /// @notice minimum time after unstaking after which user can withdraw nft
         uint256 unbondingPeriod;
-        /// @notice minimum delat after which user can unstake their nft
         uint256 minDelayBetweenStakeAndUnstake;
-        /// @notice token distributed as reward
         StakeToken stakeToken;
-        /// @notice nftVault which stores nfts
         NftVault nftvault;
     }
 
-    /// @notice Nft status
     enum NftStatus {
         STAKED,
         UNSTAKED,
         WITHDRAWN
     }
 
-    // @notice these constants are there to prevent DoS or high traffic for claiming rewards and unstaking
     uint256 public constant MIN_REWARD_PER_BLOCK = 1e9;
     uint256 public constant MIN_DELAY_BETWEEN_REWARDS = 1 days;
     uint256 public constant MIN_UNBONDING_PERIOD = 1 days;
     uint256 public constant MIN_DELAY_BETWEEN_STAKE_AND_UNSTAKE = 1 days;
-
-    /// @notice configuration
     StakeConfiguration private s_stake_configuration;
-    /// @notice token-id to nft mapping
     mapping(uint256 tokenId => Nft) s_tokenId_to_nft;
-    /// @notice token-id to nft status
     mapping(uint256 tokenId => NftStatus) private s_tokenId_to_status;
-    /// @notice token-id to timestamp nft was staked
     mapping(uint256 tokenId => uint256 stakeTimestamp) private s_tokenId_to_stakeTime;
-    /// @notice token-id to timestamp nft was unstaked
     mapping(uint256 tokenId => uint256 unstakeTimestamp) private s_tokenId_to_unstakeTime;
 
     event NftInitialized();
@@ -92,9 +71,9 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     event NftUnstaked(uint256 indexed tokenId, address indexed owner);
 
     event NftWithdrawn(uint256 indexed tokenId, address indexed owner);
-    /// @notice checks if token-id provided by user is valid or out-of-bounds
+
     modifier isValidTokenId(uint256 tokenId) {
-        if (tokenId >= s_stake_configuration.tokenId) revert NftStakeContractV1__InvalidTokenId();
+        if (tokenId >= s_stake_configuration.tokenId) revert NftStakeContractV2__InvalidTokenId();
         _;
     }
 
@@ -103,20 +82,16 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         _disableInitializers();
     }
 
-    /**
-     * @notice stakes a user-nft by transferring the nft to nftVault
-     * @param nftAddress address of ERC721Contract
-     * @param nftId token-id of nft in ERC721 contract
-     * @return token-id of nft staked
-     */
     function stakeNft(address nftAddress, uint256 nftId) external whenNotPaused returns (uint256) {
-        // check if user owns provided nft
-        if (IERC721(nftAddress).ownerOf(nftId) != msg.sender) revert NftStakeContractV1__CallerNotNftOwner();
+        // checks
+        if (IERC721(nftAddress).ownerOf(nftId) != msg.sender) revert NftStakeContractV2__CallerNotNftOwner();
 
+        // effects
         StakeConfiguration memory stakeConfiguration = s_stake_configuration;
         uint256 tokenId = s_stake_configuration.tokenId;
         emit NftStaked(tokenId, msg.sender);
 
+        // interactions
         s_tokenId_to_stakeTime[tokenId] = block.timestamp;
         s_tokenId_to_nft[tokenId] = Nft(nftAddress, nftId, msg.sender, block.timestamp);
         s_tokenId_to_status[tokenId] = NftStatus.STAKED;
@@ -131,11 +106,11 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         Nft memory nft = s_tokenId_to_nft[tokenId];
         isCallerOwnerOfNft(nft, msg.sender);
         NftStatus status = s_tokenId_to_status[tokenId];
-        if (status == NftStatus.UNSTAKED) revert NftStakeContractV1__NftAlreadyUnstaked(tokenId);
-        if (status == NftStatus.WITHDRAWN) revert NftStakeContractV1__NftAlreadyWithdrawn(tokenId);
+        if (status == NftStatus.UNSTAKED) revert NftStakeContractV2__NftAlreadyUnstaked(tokenId);
+        if (status == NftStatus.WITHDRAWN) revert NftStakeContractV2__NftAlreadyWithdrawn(tokenId);
 
         if (block.timestamp - getStakeTimeFromTokenId(tokenId) < s_stake_configuration.minDelayBetweenStakeAndUnstake) {
-            revert NftStakeContractV1__DelayPeriodBetweenStakeAndUnstakeNotOver();
+            revert NftStakeContractV2__DelayPeriodBetweenStakeAndUnstakeNotOver();
         }
 
         // effects
@@ -163,11 +138,11 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         NftStatus status = s_tokenId_to_status[tokenId];
         Nft memory nft = s_tokenId_to_nft[tokenId];
         isCallerOwnerOfNft(nft, msg.sender);
-        if (status == NftStatus.STAKED) revert NftStakeContractV1__NftStillStaked(tokenId);
-        if (status == NftStatus.WITHDRAWN) revert NftStakeContractV1__NftAlreadyWithdrawn(tokenId);
+        if (status == NftStatus.STAKED) revert NftStakeContractV2__NftStillStaked(tokenId);
+        if (status == NftStatus.WITHDRAWN) revert NftStakeContractV2__NftAlreadyWithdrawn(tokenId);
         uint256 unstakeTimeStamp = s_tokenId_to_unstakeTime[tokenId];
         uint256 unbondingPeriod = getUnbondingPeriod();
-        if (block.timestamp < unstakeTimeStamp + unbondingPeriod) revert NftStakeContractV1__UnbondingPeriodNotOver();
+        if (block.timestamp < unstakeTimeStamp + unbondingPeriod) revert NftStakeContractV2__UnbondingPeriodNotOver();
         //effects
         emit NftWithdrawn(tokenId, nft.previousOwner);
 
@@ -177,7 +152,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     }
 
     function updateRewardsPerBlock(uint256 rewardsPerBlock) external whenNotPaused onlyOwner returns (uint256) {
-        if (rewardsPerBlock < MIN_REWARD_PER_BLOCK) revert NftStakeContractV1__RewardsPerBlockTooLow();
+        if (rewardsPerBlock < MIN_REWARD_PER_BLOCK) revert NftStakeContractV2__RewardsPerBlockTooLow();
         s_stake_configuration.rewardsPerBlock = rewardsPerBlock;
         return rewardsPerBlock;
     }
@@ -189,14 +164,14 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         returns (uint256)
     {
         if (minDelayBetweenRewards < MIN_DELAY_BETWEEN_REWARDS) {
-            revert NftStakeContractV1__MinDelayBetweenRewardsTooLow();
+            revert NftStakeContractV2__MinDelayBetweenRewardsTooLow();
         }
         s_stake_configuration.minDelayBetweenRewards = minDelayBetweenRewards;
         return minDelayBetweenRewards;
     }
 
     function updateUnbondingPeriod(uint256 unbondingPeriod) external whenNotPaused onlyOwner returns (uint256) {
-        if (unbondingPeriod < MIN_UNBONDING_PERIOD) revert NftStakeContractV1__UnbondingPeriodTooLow();
+        if (unbondingPeriod < MIN_UNBONDING_PERIOD) revert NftStakeContractV2__UnbondingPeriodTooLow();
         s_stake_configuration.unbondingPeriod = unbondingPeriod;
         return unbondingPeriod;
     }
@@ -208,7 +183,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         returns (uint256)
     {
         if (newDelayBetweenStakeAndUnstake < MIN_DELAY_BETWEEN_STAKE_AND_UNSTAKE) {
-            revert NftStakeContractV1__MinDelayStakeAndUnstakeTooLow();
+            revert NftStakeContractV2__MinDelayStakeAndUnstakeTooLow();
         }
         s_stake_configuration.minDelayBetweenStakeAndUnstake = newDelayBetweenStakeAndUnstake;
         return newDelayBetweenStakeAndUnstake;
@@ -231,7 +206,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     function _authorizeUpgrade(address newImplementation) internal override whenPaused {}
 
     function isCallerOwnerOfNft(Nft memory nft, address user) internal pure {
-        if (nft.previousOwner != user) revert NftStakeContractV1__CallerNotNftOwner();
+        if (nft.previousOwner != user) revert NftStakeContractV2__CallerNotNftOwner();
     }
 
     function calculateRewardsAndUpdate(Nft storage nft, NftStatus status, uint256 tokenId)
@@ -239,9 +214,9 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         returns (uint256 totalRewards)
     {
         StakeConfiguration memory stakeConfig = s_stake_configuration;
-        if (block.timestamp < nft.lastRewardTimeStamp) revert NftStakeContractV1__RewardAlreadyClaimed();
+        if (block.timestamp < nft.lastRewardTimeStamp) revert NftStakeContractV2__RewardAlreadyClaimed();
         if ((block.timestamp - nft.lastRewardTimeStamp) < stakeConfig.minDelayBetweenRewards) {
-            revert NftStakeContractV1__DelayPeriodNotOver();
+            revert NftStakeContractV2__DelayPeriodNotOver();
         }
         if (status == NftStatus.STAKED) {
             totalRewards = (block.timestamp - nft.lastRewardTimeStamp) * stakeConfig.rewardsPerBlock;
@@ -317,6 +292,8 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     }
 
     function version() public pure returns (uint256) {
-        return 1;
+        return 2;
     }
+
+    function test() public {}
 }
