@@ -86,12 +86,14 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     mapping(uint256 tokenId => uint256 unstakeTimestamp) private s_tokenId_to_unstakeTime;
 
     event NftInitialized();
-
     event NftStaked(uint256 indexed tokenId, address indexed owner);
-
     event NftUnstaked(uint256 indexed tokenId, address indexed owner);
-
     event NftWithdrawn(uint256 indexed tokenId, address indexed owner);
+    event UnbondingPeriodUpdated(uint256 indexed unbondingPeriod); 
+    event MinDelayBetweenStakeAndUnstakeUpdated(uint256 indexed minDelay);
+    event RewardsPerBlockUpdated(uint256 indexed rewardsPerBlock); 
+    event MinDelayBetweenRewardsUpdated(uint256 indexed minDelay);
+    
     /// @notice checks if token-id provided by user is valid or out-of-bounds
     modifier isValidTokenId(uint256 tokenId) {
         if (tokenId >= s_stake_configuration.tokenId) revert NftStakeContractV1__InvalidTokenId();
@@ -117,71 +119,105 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         uint256 tokenId = s_stake_configuration.tokenId;
         emit NftStaked(tokenId, msg.sender);
 
+        // updates staking timestamp in mapping
         s_tokenId_to_stakeTime[tokenId] = block.timestamp;
+        // create new nft and stores it in mapping
         s_tokenId_to_nft[tokenId] = Nft(nftAddress, nftId, msg.sender, block.timestamp);
+        // assign status for nft
         s_tokenId_to_status[tokenId] = NftStatus.STAKED;
+        // transfer nft from user to nftVault
         IERC721(nftAddress).transferFrom(msg.sender, address(stakeConfiguration.nftvault), nftId);
+        // update global token index
         stakeConfiguration.tokenId++;
         s_stake_configuration = stakeConfiguration;
         return tokenId;
     }
 
+    /**
+     * @notice un-stake nft
+     * @param tokenId global token index of nft to unstake
+     */
     function unstakeNft(uint256 tokenId) external isValidTokenId(tokenId) whenNotPaused {
-        // checks
         Nft memory nft = s_tokenId_to_nft[tokenId];
+        // caller should be the one who staked the nft
         isCallerOwnerOfNft(nft, msg.sender);
         NftStatus status = s_tokenId_to_status[tokenId];
+        // checks if the nft is still staked
         if (status == NftStatus.UNSTAKED) revert NftStakeContractV1__NftAlreadyUnstaked(tokenId);
         if (status == NftStatus.WITHDRAWN) revert NftStakeContractV1__NftAlreadyWithdrawn(tokenId);
 
+        // checks that there is at least minimum delay between user staking an nft and unstaking an nft
+        // if this check is not there then user does not just stake and unstake nft and redeems reward for unbonding period only
         if (block.timestamp - getStakeTimeFromTokenId(tokenId) < s_stake_configuration.minDelayBetweenStakeAndUnstake) {
             revert NftStakeContractV1__DelayPeriodBetweenStakeAndUnstakeNotOver();
         }
 
-        // effects
         emit NftUnstaked(tokenId, nft.previousOwner);
 
-        // interactions
+        // updtes information
         s_tokenId_to_status[tokenId] = NftStatus.UNSTAKED;
         s_tokenId_to_unstakeTime[tokenId] = block.timestamp;
     }
 
+    /**
+     * @notice user can claim reward for staked nfts and after unstaking rewards for unbonding rewards
+     * @param tokenId global token index to redeem nfts 
+     */
     function claimRewards(uint256 tokenId) external isValidTokenId(tokenId) whenNotPaused {
-        // checks
         Nft storage nft = s_tokenId_to_nft[tokenId];
+        // does the person claiming the nft was the one who staked it
         isCallerOwnerOfNft(nft, msg.sender);
         NftStatus status = s_tokenId_to_status[tokenId];
-        // effects
+
         StakeToken stakeToken = s_stake_configuration.stakeToken;
-        // interactions
+
+        // calculates totalRewards that can be claimed till current block.timestamp
+        // updates the latestRewardTimestamp for nfts
         uint256 totalRewards = calculateRewardsAndUpdate(nft, status, tokenId);
+        // mints the reward for the user
         stakeToken.mint(msg.sender, totalRewards);
     }
 
+    /**
+     * @notice allows user to withdraw nft from the vault after unstaking it
+     * @param tokenId global token id of nft user wants to withdraw
+     */
     function withdrawNft(uint256 tokenId) external isValidTokenId(tokenId) {
-        //checks
         NftStatus status = s_tokenId_to_status[tokenId];
         Nft memory nft = s_tokenId_to_nft[tokenId];
+        // checks user owns nft or not
         isCallerOwnerOfNft(nft, msg.sender);
+        // checks if nft is unstaked or not
         if (status == NftStatus.STAKED) revert NftStakeContractV1__NftStillStaked(tokenId);
         if (status == NftStatus.WITHDRAWN) revert NftStakeContractV1__NftAlreadyWithdrawn(tokenId);
         uint256 unstakeTimeStamp = s_tokenId_to_unstakeTime[tokenId];
         uint256 unbondingPeriod = getUnbondingPeriod();
+        // checks if the unbonding period has passed since unstaking
         if (block.timestamp < unstakeTimeStamp + unbondingPeriod) revert NftStakeContractV1__UnbondingPeriodNotOver();
-        //effects
+
         emit NftWithdrawn(tokenId, nft.previousOwner);
 
-        //interactions
+        // updates the status of nft
         s_tokenId_to_status[tokenId] = NftStatus.WITHDRAWN;
+        // sends nft to the user
         s_stake_configuration.nftvault.sendNft(nft.nftAddress, nft.nftId, nft.previousOwner);
     }
 
+    /**
+     * @notice updates rewards per block
+     * @param rewardsPerBlock new rewards per block
+     */
     function updateRewardsPerBlock(uint256 rewardsPerBlock) external whenNotPaused onlyOwner returns (uint256) {
         if (rewardsPerBlock < MIN_REWARD_PER_BLOCK) revert NftStakeContractV1__RewardsPerBlockTooLow();
+        emit RewardsPerBlockUpdated(rewardsPerBlock); 
         s_stake_configuration.rewardsPerBlock = rewardsPerBlock;
         return rewardsPerBlock;
     }
 
+    /**
+     * @notice updates minimum delay between rewards
+     * @param minDelayBetweenRewards new new minimum delay
+     */
     function updateMinDelayBetweenRewards(uint256 minDelayBetweenRewards)
         external
         whenNotPaused
@@ -191,12 +227,18 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         if (minDelayBetweenRewards < MIN_DELAY_BETWEEN_REWARDS) {
             revert NftStakeContractV1__MinDelayBetweenRewardsTooLow();
         }
+        emit MinDelayBetweenRewardsUpdated(minDelayBetweenRewards); 
         s_stake_configuration.minDelayBetweenRewards = minDelayBetweenRewards;
         return minDelayBetweenRewards;
     }
 
+    /**
+     * @notice updates unbonding period
+     * @param unbondingPeriod new unbonding period
+     */
     function updateUnbondingPeriod(uint256 unbondingPeriod) external whenNotPaused onlyOwner returns (uint256) {
         if (unbondingPeriod < MIN_UNBONDING_PERIOD) revert NftStakeContractV1__UnbondingPeriodTooLow();
+        emit UnbondingPeriodUpdated(unbondingPeriod);
         s_stake_configuration.unbondingPeriod = unbondingPeriod;
         return unbondingPeriod;
     }
@@ -210,16 +252,34 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
         if (newDelayBetweenStakeAndUnstake < MIN_DELAY_BETWEEN_STAKE_AND_UNSTAKE) {
             revert NftStakeContractV1__MinDelayStakeAndUnstakeTooLow();
         }
+        emit MinDelayBetweenStakeAndUnstakeUpdated(newDelayBetweenStakeAndUnstake); 
         s_stake_configuration.minDelayBetweenStakeAndUnstake = newDelayBetweenStakeAndUnstake;
         return newDelayBetweenStakeAndUnstake;
     }
 
+    /**
+     * @notice initialize contract configuration 
+     * @param stakeConfiguration initial Staking contract configuration set by ADMIN
+     */
     function initialize(StakeConfiguration memory stakeConfiguration) public initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
+        if (stakeConfiguration.rewardsPerBlock < MIN_REWARD_PER_BLOCK) revert NftStakeContractV1__RewardsPerBlockTooLow();
+        if (stakeConfiguration.minDelayBetweenRewards < MIN_DELAY_BETWEEN_REWARDS) {
+            revert NftStakeContractV1__MinDelayBetweenRewardsTooLow();
+        }
+        if (stakeConfiguration.unbondingPeriod < MIN_UNBONDING_PERIOD) revert NftStakeContractV1__UnbondingPeriodTooLow();
+        if (stakeConfiguration.minDelayBetweenStakeAndUnstake < MIN_DELAY_BETWEEN_STAKE_AND_UNSTAKE) {
+            revert NftStakeContractV1__MinDelayStakeAndUnstakeTooLow();
+        }
         s_stake_configuration = stakeConfiguration;
     }
 
+    /**
+     * to pause the functionality of contract
+     * only unstaked nfts can be withdrawn during this period
+     * contract also needs to be paused while upgrading
+     */
     function pauseContract() public onlyOwner {
         _pause();
     }
@@ -315,7 +375,7 @@ contract NftStakeContractV1 is Initializable, UUPSUpgradeable, OwnableUpgradeabl
     function getMinDelayBetweenStakeAndUnstake() public view returns (uint256) {
         return s_stake_configuration.minDelayBetweenStakeAndUnstake;
     }
-
+    /// @notice function this is version 1 of contract 
     function version() public pure returns (uint256) {
         return 1;
     }

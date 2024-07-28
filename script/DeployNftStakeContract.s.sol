@@ -23,7 +23,7 @@ contract DeployNftStakeContract is Script {
         vm.stopBroadcast();
 
         NftStakeContractV1.StakeConfiguration memory stakeConfiguration = NftStakeContractV1.StakeConfiguration({
-            rewardsPerBlock: 2,
+            rewardsPerBlock: 2e9,
             tokenId: 0,
             minDelayBetweenRewards: 2 days,
             unbondingPeriod: 3 days,

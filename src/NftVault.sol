@@ -11,7 +11,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
  */
 contract NftVault is Ownable {
     constructor() Ownable(msg.sender) {}
-
+    // sends nft from vault to user
     function sendNft(address nftAddress, uint256 nftId, address to) external onlyOwner {
         IERC721(nftAddress).transferFrom(address(this), to, nftId);
     }
