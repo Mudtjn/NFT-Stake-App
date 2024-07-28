@@ -8,6 +8,7 @@ import {NftVault} from "../src/NftVault.sol";
 import {StakeToken} from "../src/StakeToken.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {NftMock} from "./setup/NftMock.t.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract NftStakeContractV1Test is Test {
     NftVault nftVault;
@@ -219,6 +220,15 @@ contract NftStakeContractV1Test is Test {
         vm.stopPrank();
     }
 
+    function testNftsCannotBeUnstakedBeforeMinDelay() public {
+        uint256 tokenId = mintNftAndApprove(user); 
+        vm.startPrank(user); 
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock), tokenId); 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__DelayPeriodBetweenStakeAndUnstakeNotOver.selector); 
+        NftStakeContractV1(proxy).unstakeNft(vaultTokenId); 
+        vm.stopPrank(); 
+    }
+
     function testUnstakeNftUpdatesInformationForStatusAndUnstakeTime() public {
         uint256 tokenId = mintNftAndApprove(user);
         vm.prank(user);
@@ -315,5 +325,36 @@ contract NftStakeContractV1Test is Test {
         NftStakeContractV1.NftStatus actualNftStatus = NftStakeContractV1(proxy).getNftStatusFromTokenId(vaultTokenId);
         assert(expectedNftStatus == actualNftStatus);
         assertEq(nftMock.ownerOf(tokenId), user);
+    }
+
+    ///////////////////////////// update function ////////////////////////////
+    function testStakeConfigurationCannotBeUpdatedByNonOwner() public {
+        vm.startPrank(user); 
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user)); 
+        NftStakeContractV1(proxy).updateRewardsPerBlock(1e6);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user)); 
+        NftStakeContractV1(proxy).updateMinDelayBetweenRewards(1e6); 
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user)); 
+        NftStakeContractV1(proxy).updateMinDelayBetweenStakeAndUnstake(1e6);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user));
+        NftStakeContractV1(proxy).updateUnbondingPeriod(1e6); 
+        vm.stopPrank();
+    }
+
+    function testStakeConfigurationCannotBeUpdatedLessThanMinValue() public {
+        vm.startPrank(NftStakeContractV1(proxy).owner()); 
+        uint256 updatedRewardsPerBlock = NftStakeContractV1(proxy).MIN_REWARD_PER_BLOCK()/2; 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__RewardsPerBlockTooLow.selector); 
+        NftStakeContractV1(proxy).updateRewardsPerBlock(updatedRewardsPerBlock);
+        uint256 updatedMinDelayBetweenStakeAndUnstake = NftStakeContractV1(proxy).MIN_DELAY_BETWEEN_STAKE_AND_UNSTAKE()/2; 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__MinDelayStakeAndUnstakeTooLow.selector); 
+        NftStakeContractV1(proxy).updateMinDelayBetweenStakeAndUnstake(updatedMinDelayBetweenStakeAndUnstake); 
+        uint256 updatedUnbondingPeriod = NftStakeContractV1(proxy).MIN_UNBONDING_PERIOD()/2; 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__UnbondingPeriodTooLow.selector); 
+        NftStakeContractV1(proxy).updateUnbondingPeriod(updatedUnbondingPeriod);
+        uint256 updatedMinDelayBetweenRewards = NftStakeContractV1(proxy).MIN_DELAY_BETWEEN_REWARDS()/2; 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__MinDelayBetweenRewardsTooLow.selector); 
+        NftStakeContractV1(proxy).updateMinDelayBetweenRewards(updatedMinDelayBetweenRewards);  
+        vm.stopPrank(); 
     }
 }

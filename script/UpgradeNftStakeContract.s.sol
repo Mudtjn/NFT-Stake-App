@@ -7,9 +7,8 @@ import {NftStakeContractV1} from "../src/NftStakeContractV1.sol";
 import {NftStakeContractV2} from "../src/NftStakeContractV2.sol";
 /**
  * This is an example upgrade script
- * So I am updating the state to another instance of contract NftStakeContractV1
+ * So I am updating the state to another instance of contract NftStakeContractV1 which returns different version
  */
-
 contract UpgradeNftStakeContract is Script {
     function run() external returns (address) {
         address mostRecentlyDeployed = DevOpsTools.get_most_recent_deployment("ERC1967Proxy", block.chainid);
@@ -24,6 +23,7 @@ contract UpgradeNftStakeContract is Script {
         NftStakeContractV1 proxy = NftStakeContractV1(proxyAddress);
         proxy.pauseContract();
         proxy.upgradeToAndCall(newStakeContract, "");
+        proxy.unpauseContract(); 
         vm.stopBroadcast();
         return address(proxy);
     }
