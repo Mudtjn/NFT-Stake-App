@@ -51,3 +51,7 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+
+### Additional functionality added
+1. min delay between staking and unstaking period. 

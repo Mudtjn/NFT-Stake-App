@@ -14,6 +14,6 @@ contract NftVault is Ownable {
     constructor() Ownable(msg.sender) {}
 
     function sendNft(address nftAddress, uint256 nftId, address to) external onlyOwner {
-        IERC721(nftAddress).safeTransferFrom(address(this), to, nftId); 
+        IERC721(nftAddress).transferFrom(address(this), to, nftId); 
     }
 }
