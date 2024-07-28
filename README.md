@@ -18,6 +18,10 @@
 3. NftVault - Vault to  store all staked nfts.
 4. StakeToken - ERC20 contract to mint tokens. 
 
+### Pausable contract
+1. The admin can pause the contract, which would not allow users to stake nfts, unstake nfts and claim rewards. 
+2. However, users can withdraw their unstaked nfts. 
+
 ### Build
 
 ```shell

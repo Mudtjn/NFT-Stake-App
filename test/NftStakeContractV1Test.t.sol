@@ -177,6 +177,32 @@ contract NftStakeContractV1Test is Test {
         assertEq(NftStakeContractV1(proxy).calculateRewards(vaultTokenId), 0);
     }
 
+    function testRewardsCanBeClaimedAfterNftIsWithdrawn() public {
+        uint256 initialBalance = stakeToken.balanceOf(user);
+        uint256 tokenId = mintNftAndApprove(user);
+        vm.prank(user);
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock), tokenId);
+
+        uint256 minDelayBetweenRewards = NftStakeContractV1(proxy).getMinDelayBetweenRewards();
+        uint256 unbondingPeriod = NftStakeContractV1(proxy).getUnbondingPeriod();
+
+        causeDelayAndMove(minDelayBetweenRewards);
+        vm.prank(user);
+        NftStakeContractV1(proxy).unstakeNft(vaultTokenId);
+
+        causeDelayAndMove(2 * unbondingPeriod);
+        vm.startPrank(user);
+        NftStakeContractV1(proxy).withdrawNft(vaultTokenId); 
+        NftStakeContractV1(proxy).claimRewards(vaultTokenId);
+        vm.stopPrank();
+
+        uint256 expectedRewards =
+            (unbondingPeriod + minDelayBetweenRewards) * NftStakeContractV1(proxy).getRewardsPerBlock();
+        uint256 finalBalance = stakeToken.balanceOf(user);
+        assertEq(expectedRewards, finalBalance - initialBalance);
+        assertEq(NftStakeContractV1(proxy).calculateRewards(vaultTokenId), 0);
+    }
+
     function testClaimRewardsFailsWhenContractPaused() public {
         uint256 tokenId = mintNftAndApprove(user);
         vm.startPrank(user);
@@ -325,6 +351,24 @@ contract NftStakeContractV1Test is Test {
         NftStakeContractV1.NftStatus actualNftStatus = NftStakeContractV1(proxy).getNftStatusFromTokenId(vaultTokenId);
         assert(expectedNftStatus == actualNftStatus);
         assertEq(nftMock.ownerOf(tokenId), user);
+    }
+
+    function testNftWithdrawalWorksEvenWhenContractPaused() public {
+        uint256 tokenId = mintNftAndApprove(user);
+        vm.prank(user); 
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock),tokenId); 
+
+        causeDelayAndMove(NftStakeContractV1(proxy).getMinDelayBetweenStakeAndUnstake()); 
+        vm.prank(user);
+        NftStakeContractV1(proxy).unstakeNft(vaultTokenId);
+
+        vm.prank(NftStakeContractV1(proxy).owner()); 
+        NftStakeContractV1(proxy).pauseContract(); 
+
+        causeDelayAndMove(NftStakeContractV1(proxy).getUnbondingPeriod()); 
+        vm.prank(user); 
+        NftStakeContractV1(proxy).withdrawNft(vaultTokenId); 
+        assertEq(nftMock.ownerOf(tokenId), user);  
     }
 
     ///////////////////////////// update function ////////////////////////////

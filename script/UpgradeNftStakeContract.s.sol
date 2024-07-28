@@ -16,6 +16,7 @@ contract UpgradeNftStakeContract is Script {
         NftStakeContractV2 newStakeContract = new NftStakeContractV2();
         vm.stopBroadcast();
         address proxy = upgradeStakeContract(mostRecentlyDeployed, address(newStakeContract));
+        return proxy;
     }
 
     function upgradeStakeContract(address proxyAddress, address newStakeContract) public returns (address) {
