@@ -9,23 +9,38 @@ import {NftVault} from "../src/NftVault.sol";
 
 contract DeployNftStakeContract is Script {
 
+    NftVault nftVault; 
+    StakeToken stakeToken; 
 
     function run() external returns(address, address, address, address){
         (address proxy, address nftStakeContractV1) = deployNftStakeContract();  
-        vm.startBroadcast();
-        StakeToken stakeToken = new StakeToken();
-        NftVault nftVault = new NftVault(); 
-        stakeToken.transferOwnership(nftStakeContractV1);         
-        nftVault.transferOwnership(nftStakeContractV1); 
-        vm.stopBroadcast();
         return (proxy, nftStakeContractV1, address(nftVault), address(stakeToken)); 
     }
 
     function deployNftStakeContract() public returns(address, address){
+        
+        vm.startBroadcast();
+        stakeToken = new StakeToken();
+        nftVault = new NftVault(); 
+        vm.stopBroadcast(); 
+
+        NftStakeContractV1.StakeConfiguration memory stakeConfiguration = NftStakeContractV1.StakeConfiguration({
+            rewardsPerBlock: 2e18,
+            tokenId: 0, 
+            minDelayBetweenRewards: 2 days,
+            unbondingPeriod: 3 days,  
+            stakeToken: stakeToken, 
+            nftvault: nftVault 
+        });
+        
         vm.startBroadcast(); 
         NftStakeContractV1 nftStakeContractV1 = new NftStakeContractV1();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(nftStakeContractV1), abi.encodeWithSignature("initialize()")); 
+        stakeToken.transferOwnership(address(nftStakeContractV1));         
+        nftVault.transferOwnership(address(nftStakeContractV1)); 
+        ERC1967Proxy proxy = new ERC1967Proxy(address(nftStakeContractV1), "");
+        NftStakeContractV1(address(proxy)).initialize(stakeConfiguration);  
         vm.stopBroadcast();
+ 
         return (address(proxy), address(nftStakeContractV1)); 
     }
 
