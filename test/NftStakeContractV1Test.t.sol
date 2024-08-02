@@ -114,6 +114,18 @@ contract NftStakeContractV1Test is Test {
         vm.stopPrank();
     }
 
+    function testNftStakeRevertsOnInvalidTokenId() public {
+        uint256 tokenId = mintNftAndApprove(user);
+        vm.prank(user);
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock), tokenId);
+    
+        causeDelayAndMove(NftStakeContractV1(proxy).getMinDelayBetweenRewards()); 
+        vm.startPrank(user); 
+        vm.expectRevert(NftStakeContractV1.NftStakeContractV1__InvalidTokenId.selector); 
+        NftStakeContractV1(proxy).unstakeNft(vaultTokenId+1); 
+        vm.stopPrank(); 
+    }
+
     //////////////////// CLAIM REWARDS ///////////////////////////////////
     function testUserCannotCollectRewardsBeforeMinDelay() public {
         uint256 tokenId = mintNftAndApprove(user);
@@ -400,5 +412,34 @@ contract NftStakeContractV1Test is Test {
         vm.expectRevert(NftStakeContractV1.NftStakeContractV1__MinDelayBetweenRewardsTooLow.selector); 
         NftStakeContractV1(proxy).updateMinDelayBetweenRewards(updatedMinDelayBetweenRewards);  
         vm.stopPrank(); 
+    }
+
+    ////////////////////////////// getters ///////////////////////
+    function testGetnftFromTokenId() public {
+        uint256 tokenId = mintNftAndApprove(user);
+        vm.prank(user); 
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock),tokenId);         
+
+        NftStakeContractV1.Nft memory nft = NftStakeContractV1(proxy).getNftFromTokenId(vaultTokenId); 
+        assertEq(nft.nftAddress, address(nftMock));
+        assertEq(nft.nftId, vaultTokenId);  
+    }
+
+    function testGetStakeTimeFromTokenId() public {
+        uint256 tokenId = mintNftAndApprove(user);
+        vm.prank(user); 
+        uint256 vaultTokenId = NftStakeContractV1(proxy).stakeNft(address(nftMock),tokenId);         
+
+        assertEq(NftStakeContractV1(proxy).getStakeTimeFromTokenId(vaultTokenId), block.timestamp);
+    }
+
+    function testOnlyOwnerCanUnlockContract() public {
+        vm.prank(NftStakeContractV1(proxy).owner()); 
+        NftStakeContractV1(proxy).pauseContract(); 
+
+        vm.startPrank(user);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user));  
+        NftStakeContractV1(proxy).unpauseContract(); 
+        vm.stopPrank();
     }
 }
